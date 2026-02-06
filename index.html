@@ -1,0 +1,606 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>实时活动地球 - Three.js</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            overflow: hidden;
+            background: #000;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        
+        #canvas-container {
+            width: 100vw;
+            height: 100vh;
+            position: relative;
+        }
+        
+        #info {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: #fff;
+            z-index: 100;
+            pointer-events: none;
+        }
+        
+        #info h1 {
+            font-size: 2rem;
+            font-weight: 300;
+            letter-spacing: 3px;
+            margin-bottom: 10px;
+            text-shadow: 0 0 20px rgba(100, 200, 255, 0.8);
+        }
+        
+        #info p {
+            font-size: 0.9rem;
+            color: rgba(255, 255, 255, 0.7);
+            letter-spacing: 1px;
+        }
+        
+        #controls {
+            position: absolute;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 15px;
+            z-index: 100;
+        }
+        
+        .btn {
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            color: #fff;
+            padding: 10px 25px;
+            border-radius: 25px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            letter-spacing: 1px;
+            transition: all 0.3s ease;
+            backdrop-filter: blur(10px);
+        }
+        
+        .btn:hover {
+            background: rgba(100, 200, 255, 0.3);
+            border-color: rgba(100, 200, 255, 0.8);
+            box-shadow: 0 0 20px rgba(100, 200, 255, 0.5);
+        }
+        
+        .btn.active {
+            background: rgba(100, 200, 255, 0.4);
+            border-color: #64c8ff;
+        }
+        
+        #loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #fff;
+            font-size: 1.2rem;
+            letter-spacing: 2px;
+            z-index: 200;
+        }
+        
+        .loading-spinner {
+            width: 50px;
+            height: 50px;
+            border: 3px solid rgba(255, 255, 255, 0.1);
+            border-top-color: #64c8ff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        .pulse-dot {
+            position: absolute;
+            width: 10px;
+            height: 10px;
+            background: #ff4444;
+            border-radius: 50%;
+            box-shadow: 0 0 10px #ff4444, 0 0 20px #ff4444, 0 0 30px #ff4444;
+            animation: pulse 2s ease-out infinite;
+        }
+        
+        @keyframes pulse {
+            0% {
+                transform: scale(1);
+                opacity: 1;
+            }
+            100% {
+                transform: scale(3);
+                opacity: 0;
+            }
+        }
+        
+        #activity-panel {
+            position: absolute;
+            top: 50%;
+            right: 20px;
+            transform: translateY(-50%);
+            background: rgba(0, 0, 0, 0.7);
+            border: 1px solid rgba(100, 200, 255, 0.3);
+            border-radius: 10px;
+            padding: 20px;
+            color: #fff;
+            min-width: 250px;
+            backdrop-filter: blur(10px);
+        }
+        
+        #activity-panel h3 {
+            margin-bottom: 15px;
+            color: #64c8ff;
+            font-size: 1rem;
+            letter-spacing: 1px;
+        }
+        
+        .activity-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin: 10px 0;
+            font-size: 0.85rem;
+            color: rgba(255, 255, 255, 0.8);
+        }
+        
+        .activity-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+        }
+        
+        .activity-dot.commit { background: #4CAF50; }
+        .activity-dot.pr { background: #2196F3; }
+        .activity-dot.issue { background: #FF9800; }
+        .activity-dot.user { background: #E91E63; }
+    </style>
+</head>
+<body>
+    <div id="loading">
+        <div class="loading-spinner"></div>
+        <div>加载地球数据中...</div>
+    </div>
+    
+    <div id="canvas-container"></div>
+    
+    <div id="info">
+        <h1>LIVE EARTH</h1>
+        <p>实时活动可视化 · 全球动态追踪</p>
+    </div>
+    
+    <div id="controls">
+        <button class="btn active" id="btn-rotate">自动旋转</button>
+        <button class="btn" id="btn-pulse">活动脉冲</button>
+        <button class="btn" id="btn-satellite">卫星视角</button>
+        <button class="btn" id="btn-clouds">云层效果</button>
+    </div>
+    
+    <div id="activity-panel">
+        <h3>实时活动</h3>
+        <div class="activity-item">
+            <div class="activity-dot commit"></div>
+            <span>代码提交: <strong id="commit-count">2,847</strong></span>
+        </div>
+        <div class="activity-item">
+            <div class="activity-dot pr"></div>
+            <span>Pull Requests: <strong id="pr-count">156</strong></span>
+        </div>
+        <div class="activity-item">
+            <div class="activity-dot issue"></div>
+            <span>Issues: <strong id="issue-count">89</strong></span>
+        </div>
+        <div class="activity-item">
+            <div class="activity-dot user"></div>
+            <span>活跃用户: <strong id="user-count">12.5K</strong></span>
+        </div>
+    </div>
+
+    <!-- Three.js -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- OrbitControls -->
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    
+    <script>
+        // 场景设置
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.outputEncoding = THREE.sRGBEncoding;
+        document.getElementById('canvas-container').appendChild(renderer.domElement);
+        
+        // 控制器
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+        controls.minDistance = 1.5;
+        controls.maxDistance = 5;
+        controls.enablePan = false;
+        
+        // 相机位置
+        camera.position.set(0, 0, 2.5);
+        
+        // 纹理加载器
+        const textureLoader = new THREE.TextureLoader();
+        const loadingManager = new THREE.LoadingManager();
+        
+        loadingManager.onLoad = () => {
+            document.getElementById('loading').style.display = 'none';
+        };
+        
+        // 创建地球组
+        const earthGroup = new THREE.Group();
+        scene.add(earthGroup);
+        
+        // 地球几何体
+        const earthGeometry = new THREE.SphereGeometry(1, 64, 64);
+        
+        // 地球材质
+        const earthMaterial = new THREE.MeshPhongMaterial({
+            map: textureLoader.load('https://raw.githubusercontent.com/mrdoob/three.js/master/examples/textures/planets/earth_atmos_2048.jpg'),
+            specularMap: textureLoader.load('https://raw.githubusercontent.com/mrdoob/three.js/master/examples/textures/planets/earth_specular_2048.jpg'),
+            normalMap: textureLoader.load('https://raw.githubusercontent.com/mrdoob/three.js/master/examples/textures/planets/earth_normal_2048.jpg'),
+            specular: new THREE.Color(0x333333),
+            shininess: 5
+        });
+        
+        const earth = new THREE.Mesh(earthGeometry, earthMaterial);
+        earthGroup.add(earth);
+        
+        // 夜晚地球（城市灯光）
+        const nightGeometry = new THREE.SphereGeometry(1.01, 64, 64);
+        const nightMaterial = new THREE.MeshBasicMaterial({
+            map: textureLoader.load('https://raw.githubusercontent.com/mrdoob/three.js/master/examples/textures/planets/earth_lights_2048.png'),
+            transparent: true,
+            opacity: 0.8,
+            blending: THREE.AdditiveBlending
+        });
+        const nightEarth = new THREE.Mesh(nightGeometry, nightMaterial);
+        earthGroup.add(nightEarth);
+        
+        // 云层
+        const cloudGeometry = new THREE.SphereGeometry(1.02, 64, 64);
+        const cloudMaterial = new THREE.MeshPhongMaterial({
+            map: textureLoader.load('https://raw.githubusercontent.com/mrdoob/three.js/master/examples/textures/planets/earth_clouds_1024.png'),
+            transparent: true,
+            opacity: 0.4,
+            blending: THREE.AdditiveBlending,
+            side: THREE.DoubleSide
+        });
+        const clouds = new THREE.Mesh(cloudGeometry, cloudMaterial);
+        earthGroup.add(clouds);
+        
+        // 大气层光晕
+        const atmosphereGeometry = new THREE.SphereGeometry(1.15, 64, 64);
+        const atmosphereMaterial = new THREE.ShaderMaterial({
+            vertexShader: `
+                varying vec3 vNormal;
+                void main() {
+                    vNormal = normalize(normalMatrix * normal);
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                }
+            `,
+            fragmentShader: `
+                varying vec3 vNormal;
+                void main() {
+                    float intensity = pow(0.6 - dot(vNormal, vec3(0, 0, 1.0)), 4.0);
+                    gl_FragColor = vec4(0.3, 0.6, 1.0, 1.0) * intensity;
+                }
+            `,
+            blending: THREE.AdditiveBlending,
+            side: THREE.BackSide,
+            transparent: true
+        });
+        const atmosphere = new THREE.Mesh(atmosphereGeometry, atmosphereMaterial);
+        scene.add(atmosphere);
+        
+        // 星空背景
+        const starsGeometry = new THREE.BufferGeometry();
+        const starsCount = 8000;
+        const posArray = new Float32Array(starsCount * 3);
+        const colorArray = new Float32Array(starsCount * 3);
+        
+        for(let i = 0; i < starsCount * 3; i += 3) {
+            // 位置
+            posArray[i] = (Math.random() - 0.5) * 100;
+            posArray[i+1] = (Math.random() - 0.5) * 100;
+            posArray[i+2] = (Math.random() - 0.5) * 100;
+            
+            // 颜色（蓝白色调）
+            const colorType = Math.random();
+            if (colorType > 0.9) {
+                // 淡蓝色星星
+                colorArray[i] = 0.7;
+                colorArray[i+1] = 0.8;
+                colorArray[i+2] = 1.0;
+            } else if (colorType > 0.7) {
+                // 白色星星
+                colorArray[i] = 1.0;
+                colorArray[i+1] = 1.0;
+                colorArray[i+2] = 1.0;
+            } else {
+                // 淡黄色星星
+                colorArray[i] = 1.0;
+                colorArray[i+1] = 0.95;
+                colorArray[i+2] = 0.8;
+            }
+        }
+        
+        starsGeometry.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
+        starsGeometry.setAttribute('color', new THREE.BufferAttribute(colorArray, 3));
+        
+        const starsMaterial = new THREE.PointsMaterial({
+            size: 0.05,
+            vertexColors: true,
+            transparent: true,
+            opacity: 0.8
+        });
+        
+        const stars = new THREE.Points(starsGeometry, starsMaterial);
+        scene.add(stars);
+        
+        // 光照系统
+        const ambientLight = new THREE.AmbientLight(0x333333);
+        scene.add(ambientLight);
+        
+        const sunLight = new THREE.DirectionalLight(0xffffff, 1.5);
+        sunLight.position.set(5, 3, 5);
+        scene.add(sunLight);
+        
+        // 添加一个微弱的背光，增强轮廓
+        const backLight = new THREE.DirectionalLight(0x445566, 0.5);
+        backLight.position.set(-5, 0, -5);
+        scene.add(backLight);
+        
+        // 活动脉冲点
+        const pulseGroup = new THREE.Group();
+        earthGroup.add(pulseGroup);
+        
+        // 主要城市/活动点坐标（经纬度）
+        const activityLocations = [
+            { lat: 40.7128, lon: -74.0060, name: 'New York', intensity: 0.9 },
+            { lat: 51.5074, lon: -0.1278, name: 'London', intensity: 0.85 },
+            { lat: 35.6762, lon: 139.6503, name: 'Tokyo', intensity: 0.95 },
+            { lat: 31.2304, lon: 121.4737, name: 'Shanghai', intensity: 0.9 },
+            { lat: 37.7749, lon: -122.4194, name: 'San Francisco', intensity: 0.95 },
+            { lat: 52.5200, lon: 13.4050, name: 'Berlin', intensity: 0.7 },
+            { lat: -33.8688, lon: 151.2093, name: 'Sydney', intensity: 0.6 },
+            { lat: 19.0760, lon: 72.8777, name: 'Mumbai', intensity: 0.75 },
+            { lat: 55.7558, lon: 37.6173, name: 'Moscow', intensity: 0.65 },
+            { lat: -23.5505, lon: -46.6333, name: 'São Paulo', intensity: 0.7 },
+            { lat: 1.3521, lon: 103.8198, name: 'Singapore', intensity: 0.8 },
+            { lat: 25.2048, lon: 55.2708, name: 'Dubai', intensity: 0.6 },
+            { lat: 48.8566, lon: 2.3522, name: 'Paris', intensity: 0.75 },
+            { lat: 39.9042, lon: 116.4074, name: 'Beijing', intensity: 0.9 },
+            { lat: 37.5665, lon: 126.9780, name: 'Seoul', intensity: 0.85 }
+        ];
+        
+        // 将经纬度转换为3D坐标
+        function latLonToVector3(lat, lon, radius) {
+            const phi = (90 - lat) * (Math.PI / 180);
+            const theta = (lon + 180) * (Math.PI / 180);
+            
+            const x = -(radius * Math.sin(phi) * Math.cos(theta));
+            const z = (radius * Math.sin(phi) * Math.sin(theta));
+            const y = (radius * Math.cos(phi));
+            
+            return new THREE.Vector3(x, y, z);
+        }
+        
+        // 创建脉冲点
+        const pulseDots = [];
+        activityLocations.forEach(loc => {
+            const position = latLonToVector3(loc.lat, loc.lon, 1.05);
+            
+            // 中心点
+            const dotGeometry = new THREE.SphereGeometry(0.015 * loc.intensity, 16, 16);
+            const dotMaterial = new THREE.MeshBasicMaterial({
+                color: 0xff4444,
+                transparent: true
+            });
+            const dot = new THREE.Mesh(dotGeometry, dotMaterial);
+            dot.position.copy(position);
+            pulseGroup.add(dot);
+            
+            // 脉冲环
+            const ringGeometry = new THREE.RingGeometry(0.02, 0.025, 32);
+            const ringMaterial = new THREE.MeshBasicMaterial({
+                color: 0xff4444,
+                transparent: true,
+                opacity: 0.6,
+                side: THREE.DoubleSide
+            });
+            const ring = new THREE.Mesh(ringGeometry, ringMaterial);
+            ring.position.copy(position);
+            ring.lookAt(new THREE.Vector3(0, 0, 0));
+            pulseGroup.add(ring);
+            
+            pulseDots.push({
+                dot,
+                ring,
+                baseScale: loc.intensity,
+                phase: Math.random() * Math.PI * 2,
+                speed: 0.5 + Math.random() * 0.5
+            });
+        });
+        
+        // 连接线（模拟网络连接）
+        const lineMaterial = new THREE.LineBasicMaterial({
+            color: 0x44aaff,
+            transparent: true,
+            opacity: 0.15
+        });
+        
+        const connections = [];
+        for (let i = 0; i < activityLocations.length; i++) {
+            for (let j = i + 1; j < activityLocations.length; j++) {
+                if (Math.random() > 0.7) {
+                    const pos1 = latLonToVector3(activityLocations[i].lat, activityLocations[i].lon, 1.03);
+                    const pos2 = latLonToVector3(activityLocations[j].lat, activityLocations[j].lon, 1.03);
+                    
+                    const lineGeometry = new THREE.BufferGeometry().setFromPoints([pos1, pos2]);
+                    const line = new THREE.Line(lineGeometry, lineMaterial.clone());
+                    pulseGroup.add(line);
+                    
+                    connections.push({
+                        line,
+                        opacity: 0.1 + Math.random() * 0.2,
+                        phase: Math.random() * Math.PI * 2
+                    });
+                }
+            }
+        }
+        
+        // 状态控制
+        let autoRotate = true;
+        let showPulse = false;
+        let showClouds = true;
+        let satelliteView = false;
+        
+        // 按钮事件
+        document.getElementById('btn-rotate').addEventListener('click', function() {
+            autoRotate = !autoRotate;
+            this.classList.toggle('active');
+        });
+        
+        document.getElementById('btn-pulse').addEventListener('click', function() {
+            showPulse = !showPulse;
+            this.classList.toggle('active');
+            pulseGroup.visible = showPulse;
+        });
+        
+        document.getElementById('btn-clouds').addEventListener('click', function() {
+            showClouds = !showClouds;
+            this.classList.toggle('active');
+            clouds.visible = showClouds;
+        });
+        
+        document.getElementById('btn-satellite').addEventListener('click', function() {
+            satelliteView = !satelliteView;
+            this.classList.toggle('active');
+            
+            if (satelliteView) {
+                // 卫星视角 - 更近，从侧面看
+                const targetPos = new THREE.Vector3(2.5, 0.5, 0);
+                animateCamera(targetPos);
+            } else {
+                // 默认视角
+                const targetPos = new THREE.Vector3(0, 0, 2.5);
+                animateCamera(targetPos);
+            }
+        });
+        
+        // 相机动画
+        function animateCamera(targetPos) {
+            const startPos = camera.position.clone();
+            const duration = 1000;
+            const startTime = Date.now();
+            
+            function updateCamera() {
+                const elapsed = Date.now() - startTime;
+                const progress = Math.min(elapsed / duration, 1);
+                const easeProgress = 1 - Math.pow(1 - progress, 3);
+                
+                camera.position.lerpVectors(startPos, targetPos, easeProgress);
+                camera.lookAt(0, 0, 0);
+                
+                if (progress < 1) {
+                    requestAnimationFrame(updateCamera);
+                }
+            }
+            updateCamera();
+        }
+        
+        // 模拟实时数据更新
+        setInterval(() => {
+            const commitEl = document.getElementById('commit-count');
+            const prEl = document.getElementById('pr-count');
+            const issueEl = document.getElementById('issue-count');
+            const userEl = document.getElementById('user-count');
+            
+            const commits = parseInt(commitEl.textContent.replace(',', ''));
+            const prs = parseInt(prEl.textContent);
+            const issues = parseInt(issueEl.textContent);
+            
+            commitEl.textContent = (commits + Math.floor(Math.random() * 10)).toLocaleString();
+            prEl.textContent = prs + Math.floor(Math.random() * 3);
+            issueEl.textContent = Math.max(0, issues + Math.floor(Math.random() * 5) - 2);
+        }, 3000);
+        
+        // 动画循环
+        const clock = new THREE.Clock();
+        
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            const elapsedTime = clock.getElapsedTime();
+            
+            // 自动旋转
+            if (autoRotate) {
+                earthGroup.rotation.y += 0.001;
+            }
+            
+            // 云层独立旋转
+            clouds.rotation.y += 0.0005;
+            
+            // 星空缓慢旋转
+            stars.rotation.y += 0.0001;
+            
+            // 脉冲动画
+            pulseDots.forEach(pulse => {
+                const scale = pulse.baseScale * (1 + Math.sin(elapsedTime * pulse.speed + pulse.phase) * 0.3);
+                pulse.ring.scale.set(scale, scale, scale);
+                pulse.ring.material.opacity = 0.6 * (1 + Math.sin(elapsedTime * pulse.speed + pulse.phase)) / 2;
+            });
+            
+            // 连接线闪烁
+            connections.forEach(conn => {
+                conn.line.material.opacity = conn.opacity * (0.5 + 0.5 * Math.sin(elapsedTime * 2 + conn.phase));
+            });
+            
+            // 大气层轻微脉动
+            atmosphere.scale.setScalar(1 + Math.sin(elapsedTime * 0.5) * 0.01);
+            
+            controls.update();
+            renderer.render(scene, camera);
+        }
+        
+        animate();
+        
+        // 窗口大小调整
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+        
+        // 鼠标交互 - 悬停效果
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+        
+        window.addEventListener('mousemove', (event) => {
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+        });
+    </script>
+</body>
+</html>
+# Fri Feb  6 02:46:11 UTC 2026
+ 
+ 
